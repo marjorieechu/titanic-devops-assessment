@@ -199,13 +199,95 @@ tags: |
   type=sha,prefix=           # abc1234
 ```
 
-### Required Secrets
+### Secrets Management
 
-| Secret | Purpose |
-|--------|---------|
-| `GITHUB_TOKEN` | Auto-provided, GHCR access |
-| `SONAR_TOKEN` | SonarCloud authentication |
-| `SLACK_WEBHOOK_URL` | Deployment notifications |
+#### GitHub Repository Secrets (Settings → Secrets and variables → Actions)
+
+| Secret | Purpose | How to Obtain |
+|--------|---------|---------------|
+| `GITHUB_TOKEN` | GHCR access, PR comments | Auto-provided by GitHub Actions |
+| `SONAR_TOKEN` | SonarCloud authentication | [SonarCloud](https://sonarcloud.io) → My Account → Security → Generate Token |
+| `SLACK_WEBHOOK_URL` | Deployment notifications | [Slack API](https://api.slack.com/apps) → Create App → Incoming Webhooks |
+
+#### GitHub Environment Secrets (Settings → Environments)
+
+Create three environments: `development`, `staging`, `production`
+
+| Environment | Secret | Protection Rules |
+|-------------|--------|------------------|
+| development | `KUBECONFIG` | None |
+| staging | `KUBECONFIG` | None |
+| production | `KUBECONFIG` | Required reviewers, wait timer (optional) |
+
+> **Note:** Each environment has its own `KUBECONFIG` secret pointing to its respective cluster. The pipeline uses `${{ secrets.KUBECONFIG }}` which automatically resolves to the correct environment's secret based on the `environment:` declaration in the job.
+
+#### Setting Up Secrets
+
+```bash
+# 1. Base64 encode your kubeconfig files
+base64 -w 0 ~/.kube/dev-config > dev-config.b64
+base64 -w 0 ~/.kube/staging-config > staging-config.b64
+base64 -w 0 ~/.kube/prod-config > prod-config.b64
+
+# 2. Repository-level secrets (GitHub CLI)
+gh secret set SONAR_TOKEN --body "your-sonar-token"
+gh secret set SLACK_WEBHOOK_URL --body "https://hooks.slack.com/services/..."
+
+# 3. Environment-specific secrets (each env gets its own KUBECONFIG)
+gh secret set KUBECONFIG --env development --body "$(cat dev-config.b64)"
+gh secret set KUBECONFIG --env staging --body "$(cat staging-config.b64)"
+gh secret set KUBECONFIG --env production --body "$(cat prod-config.b64)"
+
+# 4. Clean up encoded files
+rm -f dev-config.b64 staging-config.b64 prod-config.b64
+```
+
+#### How Pipeline Uses Environment Secrets
+
+```yaml
+# In ci-cd.yml - each deploy job declares its environment
+deploy-dev:
+  environment:
+    name: development    # ← This tells GitHub to use 'development' env secrets
+  steps:
+    - name: Configure Kubeconfig
+      run: |
+        echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+        # ↑ Automatically uses the KUBECONFIG from 'development' environment
+```
+
+#### Security Best Practices
+
+| Practice | Implementation |
+|----------|---------------|
+| Never hardcode secrets | Use `${{ secrets.SECRET_NAME }}` |
+| Never log secrets | GitHub auto-masks, but avoid `echo $SECRET` |
+| Rotate regularly | Update tokens every 90 days |
+| Least privilege | Create service accounts with minimal permissions |
+| Audit access | Review Settings → Actions → General → Access logs |
+
+#### How Secrets Flow in Pipeline
+
+```
+GitHub Secrets (encrypted at rest)
+        │
+        ▼
+┌───────────────────────────────────────┐
+│ GitHub Actions Runner (ephemeral)     │
+│ - Secrets decrypted in memory only    │
+│ - Masked in logs automatically        │
+│ - Cleared after job completes         │
+└───────────────────────────────────────┘
+        │
+        ▼
+┌───────────────────────────────────────┐
+│ Used by:                              │
+│ - docker login (GITHUB_TOKEN)         │
+│ - sonar-scanner (SONAR_TOKEN)         │
+│ - kubectl (KUBECONFIG_*)              │
+│ - slack notification (SLACK_WEBHOOK)  │
+└───────────────────────────────────────┘
+```
 
 ## Part 3: Infrastructure as Code (AWS)
 [TODO]

@@ -197,13 +197,19 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
       - name: Deploy to Dev Kubernetes
         id: deploy
         run: |
           echo "Deploying to development environment..."
           echo "Image: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
-          # kubectl apply -k k8s/overlays/dev
-          # kubectl rollout status deployment/titanic-api -n dev --timeout=300s
+          kubectl set image deployment/titanic-api titanic-api=ghcr.io/${{ github.repository }}:sha-${{ github.sha }} -n dev
+          kubectl rollout status deployment/titanic-api -n dev --timeout=300s
 
       - name: Notify Slack - Dev Deploy
         if: always()
@@ -246,16 +252,19 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
       - name: Deploy to Staging Kubernetes
         id: deploy
         run: |
           echo "Deploying to staging environment..."
           echo "Image: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
-          # Store current revision for rollback
-          # CURRENT_REVISION=$(kubectl rollout history deployment/titanic-api -n staging | tail -2 | head -1 | awk '{print $1}')
-          # echo "previous_revision=$CURRENT_REVISION" >> $GITHUB_OUTPUT
-          # kubectl apply -k k8s/overlays/staging
-          # kubectl rollout status deployment/titanic-api -n staging --timeout=300s
+          kubectl set image deployment/titanic-api titanic-api=ghcr.io/${{ github.repository }}:sha-${{ github.sha }} -n staging
+          kubectl rollout status deployment/titanic-api -n staging --timeout=300s
           echo "deployment_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
 
       - name: Notify Slack - Staging Deploy
@@ -297,40 +306,44 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
       - name: Get current deployment revision
         id: current
         run: |
-          # CURRENT_REVISION=$(kubectl rollout history deployment/titanic-api -n prod | tail -2 | head -1 | awk '{print $1}')
-          # echo "revision=$CURRENT_REVISION" >> $GITHUB_OUTPUT
-          echo "revision=1" >> $GITHUB_OUTPUT
+          CURRENT_REVISION=$(kubectl rollout history deployment/titanic-api -n prod | tail -2 | head -1 | awk '{print $1}')
+          echo "revision=$CURRENT_REVISION" >> $GITHUB_OUTPUT
 
       - name: Deploy to Production Kubernetes
         id: deploy
         run: |
           echo "Deploying to production environment..."
           echo "Image: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}"
-          # kubectl apply -k k8s/overlays/prod
-          # kubectl rollout status deployment/titanic-api -n prod --timeout=300s
+          kubectl set image deployment/titanic-api titanic-api=ghcr.io/${{ github.repository }}:sha-${{ github.sha }} -n prod
+          kubectl rollout status deployment/titanic-api -n prod --timeout=300s
 
       - name: Verify deployment health
         id: health
         run: |
           echo "Verifying deployment health..."
-          # Sleep to allow pods to start
           sleep 30
-          # HEALTHY=$(kubectl get pods -n prod -l app=titanic-api -o jsonpath='{.items[*].status.phase}' | grep -c Running || echo 0)
-          # if [ "$HEALTHY" -lt 1 ]; then
-          #   echo "health_check=failed" >> $GITHUB_OUTPUT
-          #   exit 1
-          # fi
+          HEALTHY=$(kubectl get pods -n prod -l app=titanic-api -o jsonpath='{.items[*].status.phase}' | grep -c Running || echo 0)
+          if [ "$HEALTHY" -lt 1 ]; then
+            echo "health_check=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
           echo "health_check=passed" >> $GITHUB_OUTPUT
 
       - name: Rollback on failure
         if: failure() && steps.deploy.outcome == 'success'
         run: |
           echo "Deployment failed health checks, rolling back..."
-          # kubectl rollout undo deployment/titanic-api -n prod --to-revision=${{ steps.current.outputs.revision }}
-          # kubectl rollout status deployment/titanic-api -n prod --timeout=300s
+          kubectl rollout undo deployment/titanic-api -n prod --to-revision=${{ steps.current.outputs.revision }}
+          kubectl rollout status deployment/titanic-api -n prod --timeout=300s
           echo "Rollback completed to revision ${{ steps.current.outputs.revision }}"
 
       - name: Notify Slack - Production Deploy
