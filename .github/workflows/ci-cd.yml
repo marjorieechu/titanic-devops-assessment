@@ -2,8 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: 
-        - "**"
+    branches: [main, develop]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -41,28 +40,13 @@ jobs:
       soft_fail: false
 
   # ==========================================
-  # STAGE 3: CODE QUALITY & SAST (Gate)
-  # ==========================================
-
-  code-quality:
-    name: "Stage 3: SonarCloud Analysis"
-    needs: [iac-scan]
-    uses: marjorieechu/shared-gh-workflows/.github/workflows/sonarcloud.yml@main
-    with:
-      project_key: 'marjorieechu_titanic-devops-assessment'
-      organization: 'marjorieechu'
-      sources: 'app'
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-
-  # ==========================================
-  # STAGE 4: UNIT TESTS, LINTING & COVERAGE
+  # STAGE 3: UNIT TESTS, LINTING & COVERAGE
   # ==========================================
 
   test:
-    name: "Stage 4: Unit Tests & Lint"
+    name: "Stage 3: Unit Tests & Lint"
     runs-on: ubuntu-latest
-    needs: [code-quality]
+    needs: [iac-scan]
     outputs:
       coverage: ${{ steps.coverage.outputs.coverage }}
     steps:
@@ -106,13 +90,28 @@ jobs:
           retention-days: 14
 
   # ==========================================
+  # STAGE 4: CODE QUALITY & SAST (Gate)
+  # ==========================================
+
+  code-quality:
+    name: "Stage 4: SonarCloud Analysis"
+    needs: [test]
+    uses: marjorieechu/shared-gh-workflows/.github/workflows/sonarcloud.yml@main
+    with:
+      project_key: 'marjorieechu_titanic-devops-assessment'
+      organization: 'marjorieechu'
+      sources: 'app'
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+
+  # ==========================================
   # STAGE 5: BUILD & PUSH DOCKER IMAGE
   # ==========================================
 
   build:
     name: "Stage 5: Build & Push Image"
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [code-quality]
     permissions:
       contents: read
       packages: write
