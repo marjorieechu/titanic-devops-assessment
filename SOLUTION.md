@@ -101,7 +101,111 @@ depends_on:
 - Secrets can be overridden via `.env` file or CI/CD
 
 ## Part 2: CI/CD Pipeline
-[TODO]
+
+### Shift-Left Security Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              CI/CD Pipeline Flow (Sequential Gates)             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Stage 1: ┌──────────┐                                         │
+│           │ Gitleaks │ ── Secrets found? ──▶ STOP              │
+│           │ Secrets  │                                         │
+│           └────┬─────┘                                         │
+│                │ ✓                                              │
+│  Stage 2: ┌────▼─────┐                                         │
+│           │ Checkov  │ ── IaC issues? ──▶ STOP                 │
+│           │   IaC    │                                         │
+│           └────┬─────┘                                         │
+│                │ ✓                                              │
+│  Stage 3: ┌────▼─────┐                                         │
+│           │SonarCloud│ ── Quality gate failed? ──▶ STOP        │
+│           │  SAST    │                                         │
+│           └────┬─────┘                                         │
+│                │ ✓                                              │
+│  Stage 4: ┌────▼─────┐                                         │
+│           │  Tests   │ ── Coverage < 70%? ──▶ STOP             │
+│           │  & Lint  │                                         │
+│           └────┬─────┘                                         │
+│                │ ✓                                              │
+│  Stage 5: ┌────▼─────┐                                         │
+│           │  Build   │                                         │
+│           │  Image   │                                         │
+│           └────┬─────┘                                         │
+│                │ ✓                                              │
+│  Stage 6: ┌────▼─────┐                                         │
+│           │  Trivy   │ ── CRITICAL/HIGH CVEs? ──▶ STOP         │
+│           │  Image   │                                         │
+│           └────┬─────┘                                         │
+│                │ ✓                                              │
+│  Stage 7: ┌────▼─────┐     ┌──────────┐     ┌────────────┐    │
+│           │   Dev    │ ──▶ │ Staging  │ ──▶ │ Production │    │
+│           │  (auto)  │     │  (auto)  │     │ (approval) │    │
+│           └──────────┘     └──────────┘     └─────┬──────┘    │
+│                                                   │            │
+│                                          Health check failed?  │
+│                                                   │            │
+│                                          ┌────────▼────────┐   │
+│                                          │ AUTO ROLLBACK   │   │
+│                                          └─────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Reusable Workflows (Shift-Left)
+
+All security scans use reusable workflows from `shared-gh-workflows` repo:
+
+| Workflow | Purpose | When it Fails |
+|----------|---------|---------------|
+| **Gitleaks** | Detects hardcoded secrets/credentials | Secrets found in code |
+| **Checkov** | Scans Dockerfile, K8s, Terraform for misconfigs | IaC security issues |
+| **Trivy** | Scans filesystem & images for CVEs | CRITICAL/HIGH vulnerabilities |
+| **SonarCloud** | Code quality, bugs, code smells, SAST | Quality gate failed |
+
+**Why Reusable Workflows?**
+- DRY principle - define once, use everywhere
+- Centralized security policy updates
+- Consistent scanning across all repositories
+
+### Pipeline Stages (Sequential)
+
+| Stage | Gate | Fails If |
+|-------|------|----------|
+| 1. Gitleaks | Secret Detection | Hardcoded secrets/credentials found |
+| 2. Checkov | IaC Security | Dockerfile/K8s/Terraform misconfigs |
+| 3. SonarCloud | Quality Gate | Coverage < 70%, bugs, code smells |
+| 4. Tests & Lint | Coverage | `--cov-fail-under=70`, flake8, black |
+| 5. Build | Docker Build | Build errors |
+| 6. Trivy | Image Scan | CRITICAL/HIGH CVEs in image |
+| 7a. Dev | Deploy | `develop` branch only |
+| 7b. Staging | Deploy | `main` branch only |
+| 7c. Production | Manual Approval | Requires reviewer approval |
+
+### Automated Rollback
+
+Production deployments include:
+1. Store current revision before deploy
+2. Deploy new version
+3. Health check (30s wait, verify pods Running)
+4. If health check fails → `kubectl rollout undo` to previous revision
+
+### Semantic Versioning
+
+```yaml
+tags: |
+  type=ref,event=branch      # main, develop
+  type=semver,pattern={{version}}  # v1.2.3
+  type=sha,prefix=           # abc1234
+```
+
+### Required Secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `GITHUB_TOKEN` | Auto-provided, GHCR access |
+| `SONAR_TOKEN` | SonarCloud authentication |
+| `SLACK_WEBHOOK_URL` | Deployment notifications |
 
 ## Part 3: Infrastructure as Code (AWS)
 [TODO]
