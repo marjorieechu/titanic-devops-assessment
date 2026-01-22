@@ -20,7 +20,7 @@ def create_app(env_name: str) -> Flask:
 
     app.register_blueprint(people, url_prefix="/")
 
-    @app.route('/', methods=['GET'])
+    @app.route("/", methods=["GET"])
     def index():
         """
         Root endpoint for populating root route
