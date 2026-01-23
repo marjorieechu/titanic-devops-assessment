@@ -6,7 +6,7 @@ Based on logical dependencies, NOT the assessment's original numbering.
 |-------|------|--------|-------|
 | 1 | Docker (Containerization) |  DONE | Multi-stage build, docker-compose |
 | 2 | CI/CD Pipeline | DONE | Automates image builds/pushes |
-| 3 | Terraform (IaC) | ⬜ Pending | Provisions EKS/RDS infrastructure |
+| 3 | Terraform (IaC) | DONE | Provisions EKS/RDS infrastructure |
 | 4 | Kubernetes | ⬜ Pending | Deploys to provisioned infra |
 | 5 | Security | ⬜ Pending | Harden pipeline, secrets, deployments |
 | 6 | Monitoring | ⬜ Pending | Observe running system |

@@ -290,7 +290,90 @@ GitHub Secrets (encrypted at rest)
 ```
 
 ## Part 3: Infrastructure as Code (AWS)
-[TODO]
+Infrastructure as Code (Terraform)
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         AWS Region                              │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                        VPC                               │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │   │
+│  │  │ Public      │  │ Public      │  │ Public      │      │   │
+│  │  │ Subnet 1    │  │ Subnet 2    │  │ Subnet 3    │      │   │
+│  │  │ (NAT GW)    │  │ (ALB)       │  │ (ALB)       │      │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘      │   │
+│  │                                                          │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │   │
+│  │  │ Private     │  │ Private     │  │ Private     │      │   │
+│  │  │ Subnet 1    │  │ Subnet 2    │  │ Subnet 3    │      │   │
+│  │  │ (EKS/RDS)   │  │ (EKS/RDS)   │  │ (EKS/RDS)   │      │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘      │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │     EKS      │    │     RDS      │    │   Secrets    │      │
+│  │   Cluster    │◄──►│  PostgreSQL  │    │   Manager    │      │
+│  └──────────────┘    └──────────────┘    └──────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### YAML-Based Configuration Pattern
+
+Variables stored in YAML files, loaded via `yamldecode()`:
+
+```hcl
+locals {
+  env = yamldecode(file("${path.module}/../../environments/dev.yaml"))
+}
+
+module "vpc" {
+  source = "../../modules/vpc"
+  config = local.env.vpc
+  tags   = local.env.tags
+}
+```
+
+**Why YAML for Variables?**
+- Human-readable configuration
+- Easy to diff across environments
+- No Terraform syntax knowledge needed for config changes
+- Clear separation of config from code
+
+### Module Structure
+
+| Module | Resources Created |
+|--------|-------------------|
+| **VPC** | VPC, Subnets, NAT Gateway, Route Tables |
+| **EKS** | EKS Cluster, Node Groups, IAM Roles, Addons |
+| **RDS** | PostgreSQL, Subnet Group, Security Group, Secrets Manager |
+
+### Environment Scaling
+
+| Resource | Dev | Staging | Prod |
+|----------|-----|---------|------|
+| EKS Nodes | 1-3 t3.medium | 2-4 t3.medium | 3-10 t3.large |
+| RDS | db.t3.micro | db.t3.small | db.t3.medium |
+| Multi-AZ RDS | No | No | Yes |
+| NAT Gateway | Single | Single | Per-AZ |
+| Backup | 7 days | 14 days | 30 days |
+
+### Security Features
+
+- **RDS Password**: Generated randomly, stored in AWS Secrets Manager
+- **Encryption**: RDS storage encrypted at rest
+- **Network**: RDS only accessible from VPC CIDR
+- **State**: Remote state in S3 with DynamoDB locking
+
+### Usage
+
+```bash
+cd terraform/resources/dev
+terraform init
+terraform plan
+terraform apply
 
 ## Part 4: Kubernetes Deployment
 [TODO]
