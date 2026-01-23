@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: prod
+
+resources:
+  - ../../base
+
+namePrefix: prod-
+
+commonLabels:
+  environment: prod
+
+patches:
+  - path: deployment-patch.yaml
+  - path: hpa-patch.yaml
+  - path: ingress-patch.yaml
+  - path: pdb-patch.yaml
+
+secretGenerator:
+  - name: titanic-api-secret
+    behavior: replace
+    literals:
+      - DATABASE_URL=postgresql://titanic:prod-password@prod-titanic-api-db.xxxxx.us-east-1.rds.amazonaws.com:5432/titanic_db
+      - JWT_SECRET_KEY=prod-jwt-secret-key
+
+configMapGenerator:
+  - name: titanic-api-config
+    behavior: merge
+    literals:
+      - FLASK_ENV=production

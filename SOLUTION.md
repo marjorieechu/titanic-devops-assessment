@@ -423,7 +423,92 @@ OR `AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY`
 | `SLACK_WEBHOOK_URL` | Notifications (optional) |
 
 ## Part 4: Kubernetes Deployment
-[TODO]
+
+### Deployment Options
+
+| Method | Use Case |
+|--------|----------|
+| **Kustomize** | Environment-specific patches, GitOps-friendly |
+| **Helm** | Templating, packaging, sharing charts |
+
+### Kustomize Structure
+
+```
+k8s/
+├── base/                    # Common manifests
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   ├── hpa.yaml
+│   ├── pdb.yaml
+│   ├── networkpolicy.yaml
+│   └── kustomization.yaml
+└── overlays/
+    ├── dev/                 # Dev patches
+    ├── staging/             # Staging patches
+    └── prod/                # Prod patches
+```
+
+### Usage
+
+```bash
+# Preview manifests
+kubectl kustomize k8s/overlays/dev
+
+# Apply to cluster
+kubectl apply -k k8s/overlays/dev
+
+# Helm install
+helm install titanic-api ./helm/titanic-api -f values-dev.yaml
+```
+
+### Environment Scaling
+
+| Feature | Dev | Staging | Prod |
+|---------|-----|---------|------|
+| Replicas | 1 | 2 | 3 |
+| HPA Max | 3 | 5 | 20 |
+| CPU Request | 50m | 100m | 200m |
+| Memory Request | 64Mi | 128Mi | 256Mi |
+| PDB minAvailable | 1 | 1 | 2 |
+
+### Security Features
+
+| Feature | Implementation |
+|---------|---------------|
+| Non-root | `runAsUser: 1000` |
+| Read-only FS | `readOnlyRootFilesystem: true` |
+| Drop capabilities | `capabilities.drop: ALL` |
+| Network Policy | Restrict ingress/egress |
+| Pod Anti-Affinity | Spread across nodes |
+
+### Probes
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /
+    port: 5000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+### Rolling Update Strategy
+
+```yaml
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1        # Add 1 new pod
+    maxUnavailable: 0  # Never remove existing pods
+```
 
 ## Part 5: Security & Compliance
 [TODO]
