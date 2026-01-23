@@ -374,6 +374,53 @@ cd terraform/resources/dev
 terraform init
 terraform plan
 terraform apply
+``` 
+
+### CI/CD Automation
+
+Terraform changes are automated via `.github/workflows/terraform.yml`:
+
+```
+PR to main (terraform/** changes)
+        │
+        ▼
+┌───────────────┐
+│ Format Check  │
+│ + Validate    │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Checkov Scan  │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│  Plan (Dev)   │◄── Comments plan on PR
+│  Plan (Stg)   │
+│  Plan (Prod)  │
+└───────┬───────┘
+        │
+   Merge to main
+        │
+┌───────▼───────┐
+│  Apply (Dev)  │◄── Auto-apply
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Apply (Stg)   │◄── Requires approval
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Apply (Prod)  │◄── Requires approval
+└───────────────┘
+```
+
+**Required Secrets (per environment):**
+
+| Secret | Purpose |
+|--------|---------|
+| `AWS_ROLE_ARN` | IAM role for OIDC authentication |
+OR `AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY`
+| `SLACK_WEBHOOK_URL` | Notifications (optional) |
 
 ## Part 4: Kubernetes Deployment
 [TODO]
