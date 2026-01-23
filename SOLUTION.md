@@ -511,7 +511,46 @@ strategy:
 ```
 
 ## Part 5: Security & Compliance
-[TODO]
+
+See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
+
+### Security Controls Summary
+
+| Layer | Controls |
+|-------|----------|
+| **Container** | Non-root, read-only FS, drop capabilities, Trivy scan |
+| **Kubernetes** | Network Policy, PDB, security context, RBAC |
+| **Infrastructure** | Private subnets, encrypted RDS, Secrets Manager |
+| **CI/CD** | Gitleaks, Checkov, SonarCloud, OIDC auth |
+
+### Defense in Depth
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CI/CD Pipeline                           │
+│  Gitleaks → Checkov → SonarCloud → Trivy (image)           │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes                               │
+│  Network Policy │ Security Context │ RBAC │ Secrets        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Infrastructure                           │
+│  Private Subnets │ Security Groups │ Encrypted Storage     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Secrets Management
+
+| Secret | Location | Never In |
+|--------|----------|----------|
+| DB Password | AWS Secrets Manager | Code, logs, ConfigMaps |
+| JWT Key | K8s Secret (overlay) | Git, images |
+| AWS Creds | OIDC (no static keys) | Anywhere |
 
 ## Part 6: Observability & Monitoring
 [TODO]
