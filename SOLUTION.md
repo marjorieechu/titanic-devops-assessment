@@ -502,12 +502,35 @@ readinessProbe:
 
 ### Rolling Update Strategy
 
-```yaml
-strategy:
-  type: RollingUpdate
-  rollingUpdate:
-    maxSurge: 1        # Add 1 new pod
-    maxUnavailable: 0  # Never remove existing pods
+spec:
+  revisionHistoryLimit: 10      # Keep 10 revisions for rollback
+  minReadySeconds: 10           # Wait 10s before marking ready
+  progressDeadlineSeconds: 300  # Fail if not done in 5 min
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Add 1 new pod first
+      maxUnavailable: 0  # Never remove existing pods
+```
+
+### Rollback Mechanism
+
+**Via CI/CD (Recommended):**
+1. Go to Actions → CI/CD Pipeline → Run workflow
+2. Select action: `rollback`
+3. Select environment: `dev/staging/prod`
+4. Optionally specify revision number
+
+**Via kubectl:**
+```bash
+# Rollback to previous
+kubectl rollout undo deployment/titanic-api -n prod
+
+# Rollback to specific revision
+kubectl rollout undo deployment/titanic-api -n prod --to-revision=3
+
+# View revision history
+kubectl rollout history deployment/titanic-api -n prod
 ```
 
 ## Part 5: Security & Compliance
