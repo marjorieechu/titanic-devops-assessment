@@ -7,7 +7,29 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        default: 'deploy'
+        options:
+          - deploy
+          - rollback
+      environment:
+        description: 'Environment for rollback'
+        required: true
+        type: choice
+        default: 'dev'
+        options:
+          - dev
+          - staging
+          - prod
+      revision:
+        description: 'Revision to rollback to (leave empty for previous)'
+        required: false
+        type: string
+        default: ''
 permissions:
   contents: read
 
@@ -298,7 +320,7 @@ jobs:
     name: "Stage 7c: Deploy to Production"
     runs-on: ubuntu-latest
     needs: [deploy-staging]
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy' && github.event.inputs.environment == 'prod'
     environment:
       name: production
       url: https://titanic-api.example.com
@@ -382,3 +404,79 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         continue-on-error: true
+        
+  # ==========================================
+  # ROLLBACK JOB (Manual Trigger Only)
+  # ==========================================
+
+  rollback:
+    name: "Rollback Deployment"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback'
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Get current revision info
+        id: current
+        run: |
+          echo "### Current Deployment Status" >> $GITHUB_STEP_SUMMARY
+          kubectl rollout history deployment/titanic-api -n ${{ github.event.inputs.environment }} >> $GITHUB_STEP_SUMMARY
+          CURRENT=$(kubectl rollout history deployment/titanic-api -n ${{ github.event.inputs.environment }} | tail -2 | head -1 | awk '{print $1}')
+          echo "current_revision=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Rollback deployment
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          REVISION="${{ github.event.inputs.revision }}"
+          
+          echo "Rolling back titanic-api in $ENV..."
+          
+          if [ -n "$REVISION" ]; then
+            echo "Rolling back to specific revision: $REVISION"
+            kubectl rollout undo deployment/titanic-api -n $ENV --to-revision=$REVISION
+          else
+            echo "Rolling back to previous revision"
+            kubectl rollout undo deployment/titanic-api -n $ENV
+          fi
+          
+          kubectl rollout status deployment/titanic-api -n $ENV --timeout=300s
+          
+          echo "### Rollback Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: $ENV" >> $GITHUB_STEP_SUMMARY
+          kubectl get deployment titanic-api -n $ENV -o wide >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Slack - Rollback
+        if: always()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "${{ job.status == 'success' && '⏪ ✅' || '⏪ ❌' }} Rollback ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Rollback ${{ job.status }}*\n• Environment: ${{ github.event.inputs.environment }}\n• Revision: ${{ github.event.inputs.revision || 'previous' }}\n• Actor: ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+        continue-on-error: true
+
