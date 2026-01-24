@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: titanic-api
+  namespace: titanic-api
+  labels:
+    app: titanic-api
+spec:
+  selector:
+    matchLabels:
+      app: titanic-api
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

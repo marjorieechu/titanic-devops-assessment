@@ -576,13 +576,73 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
 | AWS Creds | OIDC (no static keys) | Anywhere |
 
 ## Part 6: Observability & Monitoring
-[TODO]
+
+### Monitoring Stack
+
+| Component | Purpose |
+|-----------|---------|
+| Prometheus | Metrics collection & storage |
+| Grafana | Visualization & dashboards |
+| AlertManager | Alert routing & notifications |
+
+### Prometheus Configuration
+
+```yaml
+# ServiceMonitor - scrapes /metrics endpoint
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: titanic-api
+spec:
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+```
+
+### Grafana Dashboard Panels
+
+| Panel | Metric | Purpose |
+|-------|--------|---------|
+| Request Rate | `http_requests_total` | Traffic volume |
+| Latency (p95/p50) | `http_request_duration_seconds` | Response time |
+| Error Rate | `status=~"5.."` | Availability |
+| CPU Usage | `container_cpu_usage_seconds_total` | Resource |
+| Memory Usage | `container_memory_usage_bytes` | Resource |
+| Pod Replicas | `kube_pod_status_phase` | Scaling |
+| Pod Restarts | `kube_pod_container_status_restarts_total` | Stability |
+
+### Alert Rules
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| ApiDown | `up == 0` for 1m | Critical |
+| HighErrorRate | `>5%` for 5m | Critical |
+| HighLatency | `p95 > 1s` for 5m | Warning |
+| HighCPU | `>80%` for 10m | Warning |
+| HighMemory | `>80%` for 10m | Warning |
+| PodRestart | `>3 restarts/hour` | Warning |
+| DatabaseErrors | `>10 errors/5m` | Critical |
+
+### Files
+
+```
+monitoring/
+├── prometheus/
+│   ├── servicemonitor.yaml
+│   └── podmonitor.yaml
+├── alerting/
+│   └── prometheus-rules.yaml
+└── grafana/
+    ├── dashboard.json
+    └── dashboard-configmap.yaml
+```
 
 ## Part 7: Disaster Recovery & Backup
-[TODO]
+Refer to Readme.md
 
 ## Design Decisions & Trade-offs
-[TODO]
+Readme.md
 
 ## Known Limitations
 [TODO]
