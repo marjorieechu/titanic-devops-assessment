@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: titanic-api-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  titanic-api-dashboard.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "panels": [
+        {
+          "title": "Request Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "targets": [{ "expr": "sum(rate(http_requests_total{job=\"titanic-api\"}[5m])) by (status)", "legendFormat": "{{status}}" }],
+          "fieldConfig": { "defaults": { "unit": "reqps" } }
+        },
+        {
+          "title": "Response Latency (p95)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "targets": [
+            { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"titanic-api\"}[5m])) by (le))", "legendFormat": "p95" },
+            { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=\"titanic-api\"}[5m])) by (le))", "legendFormat": "p50" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "s" } }
+        },
+        {
+          "title": "Error Rate",
+          "type": "stat",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "targets": [{ "expr": "sum(rate(http_requests_total{job=\"titanic-api\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"titanic-api\"}[5m])) * 100", "legendFormat": "Error %" }],
+          "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "steps": [{ "color": "green" }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
+        },
+        {
+          "title": "CPU Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "targets": [{ "expr": "sum(rate(container_cpu_usage_seconds_total{container=\"titanic-api\"}[5m])) by (pod)", "legendFormat": "{{pod}}" }]
+        },
+        {
+          "title": "Memory Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "targets": [{ "expr": "sum(container_memory_usage_bytes{container=\"titanic-api\"}) by (pod)", "legendFormat": "{{pod}}" }],
+          "fieldConfig": { "defaults": { "unit": "bytes" } }
+        }
+      ],
+      "refresh": "30s",
+      "title": "Titanic API Dashboard",
+      "uid": "titanic-api"
+    }

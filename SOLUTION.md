@@ -290,34 +290,359 @@ GitHub Secrets (encrypted at rest)
 ```
 
 ## Part 3: Infrastructure as Code (AWS)
-[TODO]
+Infrastructure as Code (Terraform)
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         AWS Region                              │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                        VPC                               │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │   │
+│  │  │ Public      │  │ Public      │  │ Public      │      │   │
+│  │  │ Subnet 1    │  │ Subnet 2    │  │ Subnet 3    │      │   │
+│  │  │ (NAT GW)    │  │ (ALB)       │  │ (ALB)       │      │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘      │   │
+│  │                                                          │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │   │
+│  │  │ Private     │  │ Private     │  │ Private     │      │   │
+│  │  │ Subnet 1    │  │ Subnet 2    │  │ Subnet 3    │      │   │
+│  │  │ (EKS/RDS)   │  │ (EKS/RDS)   │  │ (EKS/RDS)   │      │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘      │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │     EKS      │    │     RDS      │    │   Secrets    │      │
+│  │   Cluster    │◄──►│  PostgreSQL  │    │   Manager    │      │
+│  └──────────────┘    └──────────────┘    └──────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### YAML-Based Configuration Pattern
+
+Variables stored in YAML files, loaded via `yamldecode()`:
+
+```hcl
+locals {
+  env = yamldecode(file("${path.module}/../../environments/dev.yaml"))
+}
+
+module "vpc" {
+  source = "../../modules/vpc"
+  config = local.env.vpc
+  tags   = local.env.tags
+}
+```
+
+**Why YAML for Variables?**
+- Human-readable configuration
+- Easy to diff across environments
+- No Terraform syntax knowledge needed for config changes
+- Clear separation of config from code
+
+### Module Structure
+
+| Module | Resources Created |
+|--------|-------------------|
+| **VPC** | VPC, Subnets, NAT Gateway, Route Tables |
+| **EKS** | EKS Cluster, Node Groups, IAM Roles, Addons |
+| **RDS** | PostgreSQL, Subnet Group, Security Group, Secrets Manager |
+
+### Environment Scaling
+
+| Resource | Dev | Staging | Prod |
+|----------|-----|---------|------|
+| EKS Nodes | 1-3 t3.medium | 2-4 t3.medium | 3-10 t3.large |
+| RDS | db.t3.micro | db.t3.small | db.t3.medium |
+| Multi-AZ RDS | No | No | Yes |
+| NAT Gateway | Single | Single | Per-AZ |
+| Backup | 7 days | 14 days | 30 days |
+
+### Security Features
+
+- **RDS Password**: Generated randomly, stored in AWS Secrets Manager
+- **Encryption**: RDS storage encrypted at rest
+- **Network**: RDS only accessible from VPC CIDR
+- **State**: Remote state in S3 with DynamoDB locking
+
+### Usage
+
+```bash
+cd terraform/resources/dev
+terraform init
+terraform plan
+terraform apply
+``` 
+
+### CI/CD Automation
+
+Terraform changes are automated via `.github/workflows/terraform.yml`:
+
+```
+PR to main (terraform/** changes)
+        │
+        ▼
+┌───────────────┐
+│ Format Check  │
+│ + Validate    │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Checkov Scan  │
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│  Plan (Dev)   │◄── Comments plan on PR
+│  Plan (Stg)   │
+│  Plan (Prod)  │
+└───────┬───────┘
+        │
+   Merge to main
+        │
+┌───────▼───────┐
+│  Apply (Dev)  │◄── Auto-apply
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Apply (Stg)   │◄── Requires approval
+└───────┬───────┘
+        │
+┌───────▼───────┐
+│ Apply (Prod)  │◄── Requires approval
+└───────────────┘
+```
+
+**Required Secrets (per environment):**
+
+| Secret | Purpose |
+|--------|---------|
+| `AWS_ROLE_ARN` | IAM role for OIDC authentication |
+OR `AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY`
+| `SLACK_WEBHOOK_URL` | Notifications (optional) |
 
 ## Part 4: Kubernetes Deployment
-[TODO]
+
+### Deployment Options
+
+| Method | Use Case |
+|--------|----------|
+| **Kustomize** | Environment-specific patches, GitOps-friendly |
+| **Helm** | Templating, packaging, sharing charts |
+
+### Kustomize Structure
+
+```
+k8s/
+├── base/                    # Common manifests
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   ├── hpa.yaml
+│   ├── pdb.yaml
+│   ├── networkpolicy.yaml
+│   └── kustomization.yaml
+└── overlays/
+    ├── dev/                 # Dev patches
+    ├── staging/             # Staging patches
+    └── prod/                # Prod patches
+```
+
+### Usage
+
+```bash
+# Preview manifests
+kubectl kustomize k8s/overlays/dev
+
+# Apply to cluster
+kubectl apply -k k8s/overlays/dev
+
+# Helm install
+helm install titanic-api ./helm/titanic-api -f values-dev.yaml
+```
+
+### Environment Scaling
+
+| Feature | Dev | Staging | Prod |
+|---------|-----|---------|------|
+| Replicas | 1 | 2 | 3 |
+| HPA Max | 3 | 5 | 20 |
+| CPU Request | 50m | 100m | 200m |
+| Memory Request | 64Mi | 128Mi | 256Mi |
+| PDB minAvailable | 1 | 1 | 2 |
+
+### Security Features
+
+| Feature | Implementation |
+|---------|---------------|
+| Non-root | `runAsUser: 1000` |
+| Read-only FS | `readOnlyRootFilesystem: true` |
+| Drop capabilities | `capabilities.drop: ALL` |
+| Network Policy | Restrict ingress/egress |
+| Pod Anti-Affinity | Spread across nodes |
+
+### Probes
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /
+    port: 5000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+### Rolling Update Strategy
+
+spec:
+  revisionHistoryLimit: 10      # Keep 10 revisions for rollback
+  minReadySeconds: 10           # Wait 10s before marking ready
+  progressDeadlineSeconds: 300  # Fail if not done in 5 min
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Add 1 new pod first
+      maxUnavailable: 0  # Never remove existing pods
+```
+
+### Rollback Mechanism
+
+**Via CI/CD (Recommended):**
+1. Go to Actions → CI/CD Pipeline → Run workflow
+2. Select action: `rollback`
+3. Select environment: `dev/staging/prod`
+4. Optionally specify revision number
+
+**Via kubectl:**
+```bash
+# Rollback to previous
+kubectl rollout undo deployment/titanic-api -n prod
+
+# Rollback to specific revision
+kubectl rollout undo deployment/titanic-api -n prod --to-revision=3
+
+# View revision history
+kubectl rollout history deployment/titanic-api -n prod
+```
 
 ## Part 5: Security & Compliance
-[TODO]
+
+See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
+
+### Security Controls Summary
+
+| Layer | Controls |
+|-------|----------|
+| **Container** | Non-root, read-only FS, drop capabilities, Trivy scan |
+| **Kubernetes** | Network Policy, PDB, security context, RBAC |
+| **Infrastructure** | Private subnets, encrypted RDS, Secrets Manager |
+| **CI/CD** | Gitleaks, Checkov, SonarCloud, OIDC auth |
+
+### Defense in Depth
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CI/CD Pipeline                           │
+│  Gitleaks → Checkov → SonarCloud → Trivy (image)           │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes                               │
+│  Network Policy │ Security Context │ RBAC │ Secrets        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Infrastructure                           │
+│  Private Subnets │ Security Groups │ Encrypted Storage     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Secrets Management
+
+| Secret | Location | Never In |
+|--------|----------|----------|
+| DB Password | AWS Secrets Manager | Code, logs, ConfigMaps |
+| JWT Key | K8s Secret (overlay) | Git, images |
+| AWS Creds | OIDC (no static keys) | Anywhere |
 
 ## Part 6: Observability & Monitoring
-[TODO]
+
+### Monitoring Stack
+
+| Component | Purpose |
+|-----------|---------|
+| Prometheus | Metrics collection & storage |
+| Grafana | Visualization & dashboards |
+| AlertManager | Alert routing & notifications |
+
+### Prometheus Configuration
+
+```yaml
+# ServiceMonitor - scrapes /metrics endpoint
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: titanic-api
+spec:
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+```
+
+### Grafana Dashboard Panels
+
+| Panel | Metric | Purpose |
+|-------|--------|---------|
+| Request Rate | `http_requests_total` | Traffic volume |
+| Latency (p95/p50) | `http_request_duration_seconds` | Response time |
+| Error Rate | `status=~"5.."` | Availability |
+| CPU Usage | `container_cpu_usage_seconds_total` | Resource |
+| Memory Usage | `container_memory_usage_bytes` | Resource |
+| Pod Replicas | `kube_pod_status_phase` | Scaling |
+| Pod Restarts | `kube_pod_container_status_restarts_total` | Stability |
+
+### Alert Rules
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| ApiDown | `up == 0` for 1m | Critical |
+| HighErrorRate | `>5%` for 5m | Critical |
+| HighLatency | `p95 > 1s` for 5m | Warning |
+| HighCPU | `>80%` for 10m | Warning |
+| HighMemory | `>80%` for 10m | Warning |
+| PodRestart | `>3 restarts/hour` | Warning |
+| DatabaseErrors | `>10 errors/5m` | Critical |
+
+### Files
+
+```
+monitoring/
+├── prometheus/
+│   ├── servicemonitor.yaml
+│   └── podmonitor.yaml
+├── alerting/
+│   └── prometheus-rules.yaml
+└── grafana/
+    ├── dashboard.json
+    └── dashboard-configmap.yaml
+```
 
 ## Part 7: Disaster Recovery & Backup
-[TODO]
+Refer to Readme.md
 
 ## Design Decisions & Trade-offs
-[TODO]
+Readme.md
 
-## Known Limitations
-[TODO]
-
-## Future Improvements
-[TODO]
-
-## Estimated Monthly Cloud Costs
-[TODO]
-
-## Setup Instructions
-[TODO]
-
-## Summary
-[TODO]
+## Video Demo
+link: https://youtu.be/-_1MQyNVuW0

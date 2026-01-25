@@ -1,0 +1,97 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: titanic-api-alerts
+  namespace: titanic-api
+  labels:
+    app: titanic-api
+    release: prometheus
+spec:
+  groups:
+    - name: titanic-api.availability
+      rules:
+        - alert: TitanicApiDown
+          expr: up{job="titanic-api"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Titanic API is down"
+            description: "Titanic API has been down for more than 1 minute."
+
+        - alert: TitanicApiHighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{job="titanic-api",status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="titanic-api"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High error rate on Titanic API"
+            description: "Error rate is above 5% for the last 5 minutes."
+
+        - alert: TitanicApiHighLatency
+          expr: |
+            histogram_quantile(0.95, 
+              sum(rate(http_request_duration_seconds_bucket{job="titanic-api"}[5m])) by (le)
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High latency on Titanic API"
+            description: "95th percentile latency is above 1 second."
+
+    - name: titanic-api.resources
+      rules:
+        - alert: TitanicApiHighCPU
+          expr: |
+            (
+              sum(rate(container_cpu_usage_seconds_total{container="titanic-api"}[5m])) 
+              / 
+              sum(kube_pod_container_resource_limits{container="titanic-api",resource="cpu"})
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU usage on Titanic API"
+            description: "CPU usage is above 80% for 10 minutes."
+
+        - alert: TitanicApiHighMemory
+          expr: |
+            (
+              sum(container_memory_usage_bytes{container="titanic-api"}) 
+              / 
+              sum(kube_pod_container_resource_limits{container="titanic-api",resource="memory"})
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory usage on Titanic API"
+            description: "Memory usage is above 80% for 10 minutes."
+
+        - alert: TitanicApiPodRestart
+          expr: increase(kube_pod_container_status_restarts_total{container="titanic-api"}[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Titanic API pod restarting frequently"
+            description: "Pod has restarted more than 3 times in the last hour."
+
+    - name: titanic-api.database
+      rules:
+        - alert: TitanicApiDatabaseConnectionErrors
+          expr: |
+            increase(database_connection_errors_total{job="titanic-api"}[5m]) > 10
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Database connection errors"
+            description: "More than 10 database connection errors in the last 5 minutes."

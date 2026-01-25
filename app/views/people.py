@@ -1,12 +1,11 @@
 from flask import request, json, Response, Blueprint
 from models.person import Person, PersonSchema
 
-
-people_api = Blueprint('people', __name__)
+people_api = Blueprint("people", __name__)
 person_schema = PersonSchema()
 
 
-@people_api.route('people', methods=['GET'])
+@people_api.route("people", methods=["GET"])
 def get_all() -> Response:
     """
     Endpoint returning all people from the database
@@ -19,7 +18,8 @@ def get_all() -> Response:
 
     return custom_response(people_serialized, 200)
 
-@people_api.route('people/<person_uuid>', methods=['PUT'])
+
+@people_api.route("people/<person_uuid>", methods=["PUT"])
 def update_person(person_uuid: str) -> Response:
     """
     Endpoint to update a person
@@ -39,7 +39,8 @@ def update_person(person_uuid: str) -> Response:
 
     return custom_response(people_serialized, 200)
 
-@people_api.route('people/<person_uuid>', methods=['DELETE'])
+
+@people_api.route("people/<person_uuid>", methods=["DELETE"])
 def delete_person(person_uuid: str) -> Response:
     """
     Endpoint to delete a person
@@ -56,7 +57,8 @@ def delete_person(person_uuid: str) -> Response:
     person.delete()
     return custom_response("OK", 200)
 
-@people_api.route('people/<person_uuid>', methods=['GET'])
+
+@people_api.route("people/<person_uuid>", methods=["GET"])
 def get_by_id(person_uuid: str) -> Response:
     """
     Endpoint returning a person by their UUID from the database
@@ -69,13 +71,13 @@ def get_by_id(person_uuid: str) -> Response:
     """
     people = Person.get_by_id(person_uuid)
     if isinstance(people, type(None)):
-        return custom_response("Person not found",404)
+        return custom_response("Person not found", 404)
     people_serialized = person_schema.dump(people)
 
     return custom_response(people_serialized, 200)
 
 
-@people_api.route('people', methods=['POST'])
+@people_api.route("people", methods=["POST"])
 def add_passenger() -> Response:
     """
     Endpoint adding a new person to the database based on the JSON payload of the request
@@ -97,16 +99,16 @@ def add_passenger() -> Response:
 def custom_response(response_body: dict, status_code: int) -> Response:
     """
     Wrapper function creating a response with common parameters
-    
+
     Parameters:
         response_body: the response body
         status_code: the status code of the response
-        
+
     Returns:
-        The Response object that Flask can return  
+        The Response object that Flask can return
     """
     return Response(
         mimetype="application/json",
         response=json.dumps(response_body),
-        status=status_code
+        status=status_code,
     )

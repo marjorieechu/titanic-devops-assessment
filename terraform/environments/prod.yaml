@@ -1,0 +1,41 @@
+tags:
+  owner: "DevOps Team"
+  team: "Platform Engineering"
+  environment: "prod"
+  project: "titanic-api"
+  created_by: "Terraform"
+  cloud_provider: "aws"
+  confidentiality: "confidential"
+  costcenter: "prod-titanic-eng"
+
+region:
+  primary: "us-east-1"
+  secondary: "us-west-2"
+
+vpc:
+  cidr: "10.2.0.0/16"
+  azs: ["us-east-1a", "us-east-1b", "us-east-1c"]
+  private_subnets: ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
+  public_subnets: ["10.2.101.0/24", "10.2.102.0/24", "10.2.103.0/24"]
+  enable_nat_gateway: true
+  single_nat_gateway: false
+
+eks:
+  cluster_version: "1.29"
+  node_instance_types: ["t3.large"]
+  node_desired_size: 3
+  node_min_size: 3
+  node_max_size: 10
+  node_disk_size: 50
+
+rds:
+  engine: "postgres"
+  engine_version: "15.4"
+  instance_class: "db.t3.medium"
+  allocated_storage: 100
+  max_allocated_storage: 500
+  db_name: "titanic_db"
+  db_username: "titanic"
+  multi_az: true
+  backup_retention_period: 30
+  deletion_protection: true

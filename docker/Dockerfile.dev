@@ -1,6 +1,10 @@
 # Development Dockerfile - includes hot-reload
 FROM python:3.11-slim
 
+# Security: Create non-root user
+RUN groupadd --gid 1000 appgroup && \
+    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,9 +16,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir watchdog  # For hot-reload
+RUN pip install --no-cache-dir watchdog
 
 COPY app/ .
+
+# Security: Change ownership to non-root user
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
 
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_ENV=development
@@ -22,5 +32,7 @@ ENV FLASK_DEBUG=1
 
 EXPOSE 5000
 
-# Use flask run for hot-reload in dev
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5000/ || exit 1
+
 CMD ["python", "run.py"]
