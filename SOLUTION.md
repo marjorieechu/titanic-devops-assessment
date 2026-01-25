@@ -644,17 +644,5 @@ Refer to Readme.md
 ## Design Decisions & Trade-offs
 Readme.md
 
-## Known Limitations
-[TODO]
-
-## Future Improvements
-[TODO]
-
-## Estimated Monthly Cloud Costs
-[TODO]
-
-## Setup Instructions
-[TODO]
-
-## Summary
-[TODO]
+## Video Demo
+link: https://youtu.be/-_1MQyNVuW0
